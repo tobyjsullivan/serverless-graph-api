@@ -56,7 +56,8 @@ resource "aws_lambda_function" "handler" {
 }
 
 resource "aws_api_gateway_rest_api" "api" {
-  name = "graph-api-${var.env}"
+  depends_on = ["aws_lambda_function.handler"]
+  name       = "graph-api-${var.env}"
 }
 
 resource "aws_api_gateway_resource" "proxy" {
@@ -121,7 +122,11 @@ resource "aws_lambda_permission" "apigw" {
 }
 
 resource "aws_api_gateway_method_settings" "api_settings" {
-  depends_on  = ["aws_api_gateway_account.account"]
+  depends_on = [
+    "aws_api_gateway_account.account",
+    "aws_api_gateway_deployment.api_deployment",
+  ]
+
   rest_api_id = "${aws_api_gateway_rest_api.api.id}"
   stage_name  = "${var.env}"
   method_path = "*/*"
