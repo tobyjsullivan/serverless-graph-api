@@ -14,6 +14,6 @@ make infra/staging/apply
 ## Running
 
 ```bash
-curl -X POST "$(cd infra/staging && terraform output api_invoke_url)/query" --data '{ hello }'
+curl -X POST "$(cd infra/staging && terraform output api_invoke_url)/query" --data '{ "query": "{ hello }" }'
 ```
 
