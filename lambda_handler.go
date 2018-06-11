@@ -1,23 +1,29 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"github.com/aws/aws-lambda-go/lambda"
 )
 
-type MyEvent struct {
-	Name string `json:"name"`
+type ApiEvent struct {
+	Body       string `json:"body"`
+	HttpMethod string `json:"httpMethod"`
+	Resource   string `json:"resource"`
 }
 
-type MyResponse struct {
-	Message string `json:"message"`
+type ApiResponse struct {
+	StatusCode int `json:"statusCode"`
+	Headers []interface{} `json:"headers"`
+	Body string `json:"body"`
+	IsBase64Encoded bool `json:"isBase64Encoded"`
 }
 
-func HandleLambdaEvent(ctx context.Context, event MyEvent) (MyResponse, error) {
-	name := event.Name
-	return MyResponse{
-		Message: fmt.Sprintf("Hello, friend %s!", name),
+func HandleLambdaEvent(event ApiEvent) (ApiResponse, error) {
+	name := event.Body
+	return ApiResponse {
+		Body: fmt.Sprintf("Received: %s!", name),
+		StatusCode: 200,
+		IsBase64Encoded: false,
 	}, nil
 }
 
