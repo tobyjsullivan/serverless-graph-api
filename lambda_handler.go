@@ -5,12 +5,23 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"encoding/json"
 	"log"
+	"github.com/graphql-go/graphql"
+	"net/http"
+	"errors"
+)
+
+var (
+	schema graphql.Schema
 )
 
 type ApiEvent struct {
 	Body       string `json:"body"`
 	HttpMethod string `json:"httpMethod"`
-	Resource   string `json:"resource"`
+	Path       string `json:"path"`
+}
+
+type QueryRequest struct {
+	Query string `json:"query"`
 }
 
 type ApiResponse struct {
@@ -20,45 +31,68 @@ type ApiResponse struct {
 	IsBase64Encoded bool              `json:"isBase64Encoded"`
 }
 
-type MyResponse struct {
-	Message string `json:"message"`
+type ResponseBody struct {
+	Data   interface{} `json:"data"`
+	Errors []string    `json:"errors"`
 }
 
-func generateApiResponse(statusCode int, headers map[string]string, body interface{}) (ApiResponse, error) {
+func generateApiResponse(statusCode int, body interface{}) (ApiResponse, error) {
 	if content, err := json.Marshal(body); err != nil {
 		return ApiResponse{}, err
 	} else {
 		return ApiResponse{
 			StatusCode:      statusCode,
 			Body:            string(content),
-			Headers:         headers,
+			Headers:         map[string]string{},
 			IsBase64Encoded: false,
 		}, nil
 	}
 }
 
 func HandleLambdaEvent(event ApiEvent) (ApiResponse, error) {
-	name := event.Body
-	resp, err := generateApiResponse(200, map[string]string{
-		"x-method":   event.HttpMethod,
-		"x-resource": event.Resource,
-	}, MyResponse{
-		Message: fmt.Sprintf("Received: %s!", name),
-	})
-	if err != nil {
-		log.Println("Encountered error in execution:", err.Error())
-		return ApiResponse{}, err
+	log.Printf("Request path: %s\n", event.Path)
+	log.Printf("Request method: %s\n", event.HttpMethod)
+	log.Printf("Request body: %s\n", event.Body)
+
+	if event.Path == "/query" && event.HttpMethod == http.MethodPost {
+		var queryRequest QueryRequest
+		err := json.Unmarshal([]byte(event.Body), &queryRequest)
+		if err != nil {
+			return generateApiResponse(http.StatusBadRequest, ResponseBody{Errors: []string{err.Error()}})
+		}
+
+		return handleGraphQuery(&queryRequest)
 	}
 
-	serResp, err := json.Marshal(resp)
-	if err != nil {
-		panic("Unexpected error during response serialization: " + err.Error())
+	return ApiResponse{}, errors.New(fmt.Sprintf("Unexpected query: %s %s", event.HttpMethod, event.Path))
+}
+
+func handleGraphQuery(query *QueryRequest) (ApiResponse, error) {
+	params := graphql.Params{Schema: schema, RequestString: query.Query}
+	r := graphql.Do(params)
+	if len(r.Errors) > 0 {
+		return generateApiResponse(http.StatusBadRequest, r)
 	}
 
-	log.Println("Returning this response: " + string(serResp))
-	return resp, nil
+	return generateApiResponse(http.StatusOK, r)
 }
 
 func main() {
+	fields := graphql.Fields{
+		"hello": &graphql.Field{
+			Type: graphql.String,
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				return "world", nil
+			},
+		},
+	}
+	rootQuery := graphql.ObjectConfig{Name: "RootQuery", Fields: fields}
+	schemaConfig := graphql.SchemaConfig{Query: graphql.NewObject(rootQuery)}
+	var err error
+	schema, err = graphql.NewSchema(schemaConfig)
+	if err != nil {
+		log.Fatalf("failed to create new schema: %v", err)
+	}
+
 	lambda.Start(HandleLambdaEvent)
 }
